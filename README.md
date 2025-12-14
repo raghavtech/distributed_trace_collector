@@ -3,6 +3,8 @@ Spans are sent asynchronously via HTTP POST to the Flow Collector.
 There is no persistent connection or coordination between services.
 
 
+
+
 ┌────────────────────────────┐
 │          Client            │
 │   (Browser / curl / API)   │
@@ -61,8 +63,6 @@ There is no persistent connection or coordination between services.
 │     └────────────────────────────────┘         │
 │                                                │
 └────────────────────────────────────────────────┘
-
-
                  ┌──────────────────────────────────────────────┐
                  │              Flow Collector                  │
                  │        (Spring Boot / REST API)              │
