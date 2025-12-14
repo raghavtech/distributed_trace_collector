@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Distributed Trace Viewer</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #0f1a2f;
+      --panel2: #0c162b;
+      --text: #e6eefc;
+      --muted: #9db0d2;
+      --line: rgba(255,255,255,0.10);
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --bad: #fb7185;
+      --accent: #60a5fa;
+      --accent2: #a78bfa;
+      --chip: rgba(96,165,250,0.12);
+      --cp: rgba(251,191,36,0.20);
+      --shadow: 0 10px 30px rgba(0,0,0,0.30);
+      --radius: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background: radial-gradient(1200px 800px at 10% 0%, #121f3d 0%, var(--bg) 55%);
+      color: var(--text);
+    }
+    header {
+      padding: 18px 18px 10px 18px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0));
+      position: sticky; top: 0; backdrop-filter: blur(8px);
+      z-index: 10;
+    }
+    h1 { margin: 0; font-size: 18px; letter-spacing: 0.2px; }
+    .sub { margin-top: 6px; color: var(--muted); font-size: 13px; }
+
+    .wrap { padding: 16px 18px 28px 18px; max-width: 1300px; margin: 0 auto; }
+    .grid {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card .hd {
+      padding: 12px 12px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,0.02);
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .card .hd .title { font-size: 13px; color: var(--muted); letter-spacing: 0.3px; text-transform: uppercase; }
+    .card .bd { padding: 12px; }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 170px;
+      gap: 10px;
+    }
+    .controls input, .controls button, .controls select {
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(15,26,47,0.6);
+      color: var(--text);
+      padding: 10px 10px;
+      font-size: 13px;
+      outline: none;
+    }
+    .controls button {
+      background: rgba(96,165,250,0.16);
+      cursor: pointer;
+      border: 1px solid rgba(96,165,250,0.35);
+    }
+    .controls button:hover { background: rgba(96,165,250,0.22); }
+    .controls .row2 { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px;}
+    .chip {
+      display: inline-flex; gap: 8px; align-items: center;
+      padding: 6px 10px; border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--chip);
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .kpi { display:flex; gap:10px; flex-wrap: wrap; }
+    .mono { font-family: var(--mono); }
+
+    .status {
+      font-size: 12px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(0,0,0,0.20);
+      color: var(--muted);
+      margin-top: 10px;
+      line-height: 1.3;
+    }
+
+    /* Service map */
+    .map {
+      display: grid;
+      gap: 10px;
+    }
+    .svcRow {
+      display:flex; align-items:center; justify-content:space-between; gap: 10px;
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(0,0,0,0.18);
+    }
+    .svcName { font-weight: 600; font-size: 13px; }
+    .svcMeta { color: var(--muted); font-size: 12px; }
+    .edges { margin-top: 10px; display: grid; gap: 8px; }
+    .edge {
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(0,0,0,0.18);
+    }
+    .edge .left { display:flex; flex-direction: column; gap: 4px; }
+    .edge .arrow { color: var(--accent); font-weight: 700; }
+    .edge .lat { font-family: var(--mono); color: var(--text); font-size: 12px; }
+
+    /* Call tree */
+    .tree {
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.35;
+      display: grid;
+      gap: 6px;
+    }
+    .node {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 8px 10px;
+      background: rgba(0,0,0,0.18);
+    }
+    .node.cp { outline: 2px solid rgba(251,191,36,0.60); background: var(--cp); }
+    .node .top {
+      display:flex; align-items:center; justify-content:space-between; gap: 10px;
+    }
+    .node .name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .node .tags { display:flex; gap: 6px; align-items:center; flex-wrap: wrap; justify-content: flex-end; }
+    .tag {
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .tag.kind-server { border-color: rgba(52,211,153,0.45); color: #bff6df; background: rgba(52,211,153,0.10); }
+    .tag.kind-client { border-color: rgba(96,165,250,0.55); color: #cfe4ff; background: rgba(96,165,250,0.10); }
+    .tag.kind-internal { border-color: rgba(167,139,250,0.55); color: #e7dbff; background: rgba(167,139,250,0.10); }
+
+    .node .meta { margin-top: 6px; color: var(--muted); display:flex; gap: 10px; flex-wrap: wrap; }
+    .node .meta span { white-space: nowrap; }
+    .indent { margin-left: calc(var(--d) * 18px); }
+
+    .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+
+<body>
+<header>
+  <h1>Distributed Trace Viewer</h1>
+  <div class="sub">
+    Paste a <span class="mono">traceId</span> and view service map + call tree (critical path highlighted).
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="card" style="margin-bottom: 14px;">
+    <div class="hd">
+      <div class="title">Trace Lookup</div>
+      <div class="kpi" id="kpis"></div>
+    </div>
+    <div class="bd">
+      <div class="controls">
+        <input id="traceId" class="mono" placeholder="traceId (32 hex) e.g. 34b0ae93f81e49869d8c35df55b02981" />
+        <button id="loadBtn">Load trace</button>
+
+        <div class="row2">
+          <input id="collectorBase" class="mono" placeholder="collector base URL" value="http://localhost:9411" />
+          <select id="viewMode">
+            <option value="tree">Call Tree</option>
+            <option value="flat">Flat List</option>
+          </select>
+          <select id="sortMode">
+            <option value="start">Sort: start time</option>
+            <option value="dur">Sort: duration</option>
+            <option value="self">Sort: self time</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="status" id="status">
+        Tip: try your traceId: <span class="mono">34b0ae93f81e49869d8c35df55b02981</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="hd"><div class="title">Service Map</div></div>
+      <div class="bd">
+        <div id="serviceMap" class="map"></div>
+        <div class="hint">
+          Service edges are inferred from <span class="mono">CLIENT</span> spans and the matching downstream <span class="mono">SERVER</span> spans (parent-child).
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hd">
+        <div class="title">Call Tree</div>
+        <div class="chip" id="cpChip" style="display:none;">Critical path highlighted</div>
+      </div>
+      <div class="bd">
+        <div id="tree" class="tree"></div>
+        <div class="hint">
+          Data source: <span class="mono">GET /trace/{traceId}/tree</span> on the collector.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function kindClass(kind) {
+    const k = (kind || "").toUpperCase();
+    if (k === "SERVER") return "kind-server";
+    if (k === "CLIENT") return "kind-client";
+    return "kind-internal";
+  }
+
+  function fmtUs(us) {
+    if (us == null) return "";
+    if (us < 1000) return `${us} µs`;
+    const ms = us / 1000;
+    if (ms < 1000) return `${ms.toFixed(2)} ms`;
+    const s = ms / 1000;
+    return `${s.toFixed(2)} s`;
+  }
+
+  function safe(v, d="—") { return (v === null || v === undefined || v === "") ? d : v; }
+
+  function buildTreeIndex(nodes) {
+    const byId = new Map();
+    nodes.forEach(n => byId.set(n.spanId, n));
+    return byId;
+  }
+
+  function groupServices(nodes) {
+    // serviceKey = serviceName|nodeId
+    const svc = new Map();
+    for (const n of nodes) {
+      const sn = safe(n.serviceName, "unknown-service");
+      const nid = safe(n.nodeId, "unknown-node");
+      const key = `${sn}|${nid}`;
+      if (!svc.has(key)) svc.set(key, { key, serviceName: sn, nodeId: nid, spans: 0, server: 0, client: 0, internal: 0 });
+      const s = svc.get(key);
+      s.spans++;
+      const k = (n.kind || "INTERNAL").toUpperCase();
+      if (k === "SERVER") s.server++;
+      else if (k === "CLIENT") s.client++;
+      else s.internal++;
+    }
+    return [...svc.values()];
+  }
+
+  function buildEdges(nodes) {
+    // infer edges: parent CLIENT span's service -> child SERVER span's service
+    // Based on your trace: SERVER root -> CLIENT -> SERVER.
+    const byId = buildTreeIndex(nodes);
+    const edges = new Map(); // key = fromKey->toKey
+
+    for (const n of nodes) {
+      if ((n.kind || "").toUpperCase() !== "SERVER") continue;
+      if (!n.parentSpanId) continue;
+
+      const parent = byId.get(n.parentSpanId);
+      if (!parent) continue;
+
+      const pk = (parent.kind || "").toUpperCase();
+      if (pk !== "CLIENT") continue;
+
+      const from = `${safe(parent.serviceName, "unknown-service")}|${safe(parent.nodeId, "unknown-node")}`;
+      const to   = `${safe(n.serviceName, "unknown-service")}|${safe(n.nodeId, "unknown-node")}`;
+      const edgeKey = `${from}→${to}`;
+
+      // use the SERVER duration as downstream latency, and CLIENT duration as "wait"
+      const clientDur = safe(parent.durationMicros, 0);
+      const serverDur = safe(n.durationMicros, 0);
+
+      if (!edges.has(edgeKey)) {
+        edges.set(edgeKey, { from, to, count: 0, clientDurSum: 0, serverDurSum: 0, examples: [] });
+      }
+      const e = edges.get(edgeKey);
+      e.count++;
+      e.clientDurSum += clientDur;
+      e.serverDurSum += serverDur;
+      if (e.examples.length < 3) e.examples.push({ client: parent.name, server: n.name });
+    }
+
+    return [...edges.values()].map(e => ({
+      ...e,
+      clientAvg: e.count ? Math.round(e.clientDurSum / e.count) : 0,
+      serverAvg: e.count ? Math.round(e.serverDurSum / e.count) : 0
+    }));
+  }
+
+  function renderKpis(resp) {
+    const nodes = resp.nodes || [];
+    const root = nodes.find(n => n.spanId === resp.rootSpanId);
+    const total = root ? root.durationMicros : (nodes[0]?.durationMicros || 0);
+
+    const services = new Set(nodes.map(n => safe(n.serviceName, "unknown")));
+    const spanCount = nodes.length;
+
+    const cp = resp.criticalPath || [];
+    const cpDur = cp.reduce((sum, id) => {
+      const n = nodes.find(x => x.spanId === id);
+      return sum + (n?.durationMicros || 0);
+    }, 0);
+
+    $("kpis").innerHTML = `
+      <span class="chip">spans: <span class="mono">${spanCount}</span></span>
+      <span class="chip">services: <span class="mono">${services.size}</span></span>
+      <span class="chip">total: <span class="mono">${fmtUs(total)}</span></span>
+      <span class="chip">critical path: <span class="mono">${fmtUs(cpDur)}</span></span>
+    `;
+  }
+
+  function renderServiceMap(resp) {
+    const nodes = resp.nodes || [];
+    const svc = groupServices(nodes);
+    const edges = buildEdges(nodes);
+
+    const svcHtml = svc.map(s => `
+      <div class="svcRow">
+        <div>
+          <div class="svcName">${s.serviceName}</div>
+          <div class="svcMeta mono">${s.nodeId}</div>
+        </div>
+        <div class="svcMeta">
+          <span class="tag kind-server">S ${s.server}</span>
+          <span class="tag kind-client">C ${s.client}</span>
+          <span class="tag kind-internal">I ${s.internal}</span>
+        </div>
+      </div>
+    `).join("");
+
+    const edgeHtml = edges.length ? edges.map(e => {
+      const [fromSvc, fromNode] = e.from.split("|");
+      const [toSvc, toNode] = e.to.split("|");
+      return `
+        <div class="edge">
+          <div class="left">
+            <div><b>${fromSvc}</b> <span class="arrow">→</span> <b>${toSvc}</b></div>
+            <div class="svcMeta mono">${fromNode} → ${toNode}</div>
+            <div class="svcMeta">count: ${e.count}</div>
+          </div>
+          <div class="lat">
+            client avg: ${fmtUs(e.clientAvg)}<br/>
+            server avg: ${fmtUs(e.serverAvg)}
+          </div>
+        </div>
+      `;
+    }).join("") : `<div class="hint">No cross-service edges found (need CLIENT → SERVER parent/child).</div>`;
+
+    $("serviceMap").innerHTML = `
+      <div>${svcHtml || `<div class="hint">No services found.</div>`}</div>
+      <div class="edges">${edgeHtml}</div>
+    `;
+  }
+
+  function renderTree(resp) {
+    const nodes = resp.nodes || [];
+    const cpSet = new Set(resp.criticalPath || []);
+    $("cpChip").style.display = cpSet.size ? "inline-flex" : "none";
+
+    const viewMode = $("viewMode").value;
+    const sortMode = $("sortMode").value;
+
+    let list = [...nodes];
+
+    // sorting
+    if (sortMode === "dur") list.sort((a,b) => (b.durationMicros||0) - (a.durationMicros||0));
+    else if (sortMode === "self") list.sort((a,b) => (b.selfTimeMicros||0) - (a.selfTimeMicros||0));
+    else list.sort((a,b) => (a.startTimeMicros||0) - (b.startTimeMicros||0));
+
+    // tree ordering: depth then start
+    if (viewMode === "tree") {
+      list.sort((a,b) => (a.depth - b.depth) || ((a.startTimeMicros||0) - (b.startTimeMicros||0)));
+    }
+
+    const html = list.map(n => {
+      const cp = cpSet.has(n.spanId) ? "cp" : "";
+      const k = (n.kind || "INTERNAL").toUpperCase();
+      const pad = viewMode === "tree" ? `indent` : "";
+      const depthVar = `--d:${n.depth || 0}`;
+
+      return `
+        <div class="node ${cp} ${pad}" style="${depthVar}">
+          <div class="top">
+            <div class="name" title="${n.name}">${n.name}</div>
+            <div class="tags">
+              <span class="tag ${kindClass(k)}">${k}</span>
+              <span class="tag">${fmtUs(n.durationMicros)}</span>
+              <span class="tag" title="exclusive (self) time">${fmtUs(n.selfTimeMicros)} self</span>
+            </div>
+          </div>
+          <div class="meta">
+            <span>svc: <b>${safe(n.serviceName)}</b></span>
+            <span>node: <span class="mono">${safe(n.nodeId)}</span></span>
+            <span>id: <span class="mono">${n.spanId}</span></span>
+            <span>parent: <span class="mono">${safe(n.parentSpanId)}</span></span>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    $("tree").innerHTML = html || `<div class="hint">No spans to display.</div>`;
+  }
+
+  async function loadTrace() {
+    const traceId = $("traceId").value.trim();
+    const base = $("collectorBase").value.trim().replace(/\/+$/,"");
+    if (!traceId) {
+      $("status").textContent = "Enter a traceId first.";
+      return;
+    }
+
+    const url = `${base}/trace/${traceId}/tree`;
+    $("status").innerHTML = `Loading: <span class="mono">${url}</span>`;
+
+    try {
+      const res = await fetch(url, { headers: { "Accept": "application/json" } });
+      const data = await res.json();
+
+      if (!res.ok || data.status === "NOT_FOUND") {
+        $("status").innerHTML = `Not found: <span class="mono">${traceId}</span>. Try checking <a href="${base}/spans/${traceId}" target="_blank">/spans/${traceId}</a>`;
+        $("serviceMap").innerHTML = "";
+        $("tree").innerHTML = "";
+        $("kpis").innerHTML = "";
+        $("cpChip").style.display = "none";
+        return;
+      }
+
+      $("status").innerHTML = `
+        Loaded trace: <span class="mono">${data.traceId}</span>
+        • root: <span class="mono">${data.rootSpanId}</span>
+        • spans: <span class="mono">${(data.nodes||[]).length}</span>
+      `;
+
+      renderKpis(data);
+      renderServiceMap(data);
+      renderTree(data);
+
+    } catch (e) {
+      $("status").textContent = `Error: ${e.message || e}`;
+    }
+  }
+
+  $("loadBtn").addEventListener("click", loadTrace);
+  $("traceId").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") loadTrace();
+  });
+
+  // convenience: if traceId present in URL hash, auto-load
+  window.addEventListener("load", () => {
+    const h = (location.hash || "").replace("#","");
+    if (h && h.length >= 16) {
+      $("traceId").value = h;
+      loadTrace();
+    }
+  });
+</script>
+</body>
+</html>
+
